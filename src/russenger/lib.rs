@@ -48,6 +48,7 @@ fn run<'a, T: Send + Freeze + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
     // 2. Receive messages from those connections
     // 3. Forward the messages to the receiver
     let stream_map_arc_clone = stream_map_arc.clone();
+    let in_chan_clone = in_chan.clone();
     spawn(proc() {
         let stream_map_arc = stream_map_arc_clone;
         let mut acceptor = TcpListener::bind(addr).listen();
@@ -60,16 +61,7 @@ fn run<'a, T: Send + Freeze + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
                     stream_map.insert(remote_addr, stream.clone());
                 });
             }
-            let in_chan_clone = in_chan.clone();
-            spawn(proc() {
-                let mut stream = BufferedStream::new(stream);
-                let msg_size = stream.read_le_u32().unwrap();
-                let msg_bytes = stream.read_bytes(msg_size as uint).unwrap();
-                if !in_chan_clone.try_send((remote_addr, from_msgpack(msg_bytes))) {
-                    // Terminate if the other end has hung up
-                    return;
-                }
-            });
+            spawn(proc() keep_reading(stream, in_chan_clone, remote_addr));
         }
     });
 
@@ -80,21 +72,42 @@ fn run<'a, T: Send + Freeze + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
             Some(data) => data,
             None => return // the other end has hung up
         };
-        let mut stream = unsafe {
-            stream_map_arc.unsafe_access(|stream_map| {
-                match stream_map.find_copy(&to) {
-                    Some(stream) => stream,
-                    None => {
-                        let stream = TcpStream::connect(to).unwrap();
-                        stream_map.insert(to, stream.clone());
-                        stream
-                    }
+        let mut stream = match unsafe { stream_map_arc.unsafe_access(|stream_map| {
+            match stream_map.find_copy(&to) {
+                Some(stream) => Some(stream),
+                None => {
+                    println!("didn't find a stream");
+                    let stream = match TcpStream::connect(to) {
+                        Ok(stream) => stream,
+                        Err(..) => return None
+                    };
+                    stream_map.insert(to, stream.clone());
+                    let reader = stream.clone();
+                    let in_chan_clone = in_chan.clone();
+                    spawn(proc() keep_reading(reader, in_chan_clone, to));
+                    Some(stream)
                 }
-            })
+            }
+        }) } {
+            Some(stream) => stream,
+            None => continue
         };
         let msg_bytes = to_msgpack(&msg);
         let msg_size = msg_bytes.len();
         stream.write_le_u32(msg_size as u32);
         stream.write(msg_bytes);
+    }
+
+    fn keep_reading<'a, T: Send + Freeze + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
+        (stream: TcpStream, in_chan: Chan<(SocketAddr, T)>, addr: SocketAddr) {
+        let mut stream = BufferedStream::new(stream);
+        loop {
+            let msg_size = stream.read_le_u32().unwrap();
+            let msg_bytes = stream.read_bytes(msg_size as uint).unwrap();
+            if !in_chan.try_send((addr, from_msgpack(msg_bytes))) {
+                // Terminate if the other end has hung up
+                return;
+            }
+        }
     }
 }
