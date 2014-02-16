@@ -24,7 +24,7 @@ use sync::MutexArc;
 /// that is encodable and decodable.
 /// 
 /// The spawned tasks will terminate after the said port and chan are destructed.
-pub fn new<'a, T: Send + Freeze + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>(addr: SocketAddr)
+pub fn new<'a, T: Send + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>(addr: SocketAddr)
     -> (Port<(SocketAddr, T)>, Chan<(SocketAddr, T)>) {
     // For incoming messages
     let (in_port, in_chan) = Chan::new();
@@ -36,7 +36,7 @@ pub fn new<'a, T: Send + Freeze + Encodable<Encoder<'a>> + Decodable<Decoder<'a>
     return (in_port, out_chan);
 }
 
-fn run<'a, T: Send + Freeze + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
+fn run<'a, T: Send + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
     (addr: SocketAddr, in_chan: Chan<(SocketAddr, T)>, out_port: Port<(SocketAddr, T)>) {
     // A stream map is a HashMap from SocketAddr to TcpStream.  The map is protected
     // by a RWArc, so to enable concurrent access.  Having this map allows us to multiplex
@@ -98,7 +98,7 @@ fn run<'a, T: Send + Freeze + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
         stream.write(msg_bytes);
     }
 
-    fn keep_reading<'a, T: Send + Freeze + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
+    fn keep_reading<'a, T: Send + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
         (stream: TcpStream, in_chan: Chan<(SocketAddr, T)>, addr: SocketAddr) {
         let mut stream = BufferedStream::new(stream);
         loop {
