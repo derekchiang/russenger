@@ -1,5 +1,5 @@
-extern mod russenger;
-extern mod serialize;
+extern crate russenger;
+extern crate serialize;
 
 use std::io::timer::sleep;
 

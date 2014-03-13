@@ -3,16 +3,17 @@
 #[license = "MIT/ASL2"];
 #[crate_type = "lib"];
 
-extern mod msgpack;
-extern mod serialize;
-extern mod sync;
+extern crate msgpack;
+extern crate collections;
+extern crate serialize;
+extern crate sync;
 
-use std::hashmap::HashMap;
 use std::io::BufferedStream;
 use std::io::{Acceptor, Listener};
 use std::io::net::ip::SocketAddr;
 use std::io::net::tcp::{TcpListener, TcpStream};
 
+use collections::hashmap::HashMap;
 use msgpack::{to_msgpack, from_msgpack, Encoder, Decoder};
 use serialize::{Encodable, Decodable};
 use sync::MutexArc;
@@ -56,11 +57,9 @@ fn run<'a, T: Send + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
         for stream in acceptor.incoming() {
             let mut stream = stream.unwrap();
             let remote_addr = stream.peer_name().unwrap();
-            unsafe {
-                stream_map_arc.unsafe_access(|stream_map| {
-                    stream_map.insert(remote_addr, stream.clone());
-                });
-            }
+            stream_map_arc.access(|stream_map| {
+                stream_map.insert(remote_addr, stream.clone());
+            });
             spawn(proc() keep_reading(stream, in_chan_clone, remote_addr));
         }
     });
@@ -72,7 +71,7 @@ fn run<'a, T: Send + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
             Some(data) => data,
             None => return // the other end has hung up
         };
-        let mut stream = match unsafe { stream_map_arc.unsafe_access(|stream_map| {
+        let mut stream = match { stream_map_arc.access(|stream_map| {
             match stream_map.find_copy(&to) {
                 Some(stream) => Some(stream),
                 None => {
@@ -94,8 +93,16 @@ fn run<'a, T: Send + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
         };
         let msg_bytes = to_msgpack(&msg);
         let msg_size = msg_bytes.len();
-        stream.write_le_u32(msg_size as u32);
-        stream.write(msg_bytes);
+        // TODO: think about how to deal with these failures...
+        // we shouldn't just call fail!()
+        match stream.write_le_u32(msg_size as u32) {
+            Ok(..) => (),
+            Err(err) => fail!("{}", err.to_str()),
+        };
+        match stream.write(msg_bytes) {
+            Ok(..) => (),
+            Err(err) => fail!("{}", err.to_str()),
+        };
     }
 
     fn keep_reading<'a, T: Send + Encodable<Encoder<'a>> + Decodable<Decoder<'a>>>
