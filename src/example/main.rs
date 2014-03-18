@@ -14,23 +14,23 @@ fn main() {
     let addrB = from_str("127.0.0.1:4010").unwrap();
 
     spawn(proc() {
-        let (port, chan) = russenger::new(addrB);
+        let (tx, rx) = russenger::new(addrB);
         sleep(100);
-        let (from, msg) = port.recv();
+        let (from, msg) = rx.recv();
         println!("{} from {}", msg, from.to_str());
-        chan.send((from, Message {
+        tx.send((from, Message {
             id: 20,
             content: ~"Yo"
         }));
     });
 
-    let (port, chan) = russenger::new(addrA);
+    let (tx, rx) = russenger::new(addrA);
     sleep(100);
     let msg = Message {
         id: 10,
         content: ~"Hello"
     };
-    chan.send((addrB, msg));
-    let (from, reply) = port.recv();
+    tx.send((addrB, msg));
+    let (from, reply) = rx.recv();
     println!("{} from {}", reply, from.to_str());
 }
